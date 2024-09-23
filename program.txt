@@ -1,0 +1,112 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+
+#define HEAP_SIZE 128 * 1024  
+#define MIN_BLOCK_SIZE 1024    
+
+typedef struct Block {
+    size_t size;              
+    struct Block *link;       
+    int free;                 
+} Slist;
+
+static char heap[HEAP_SIZE];  
+static Slist *freeList = NULL; 
+static Slist *lastalloc = NULL; 
+static Slist *lfreed = NULL;     
+
+
+void init() {
+    freeList = (Slist *)heap;
+    freeList->size = HEAP_SIZE - sizeof(Slist);
+    freeList->link = NULL;
+    freeList->free = 1; 
+}
+
+
+void *best_fit(size_t size) {
+    if (size == 0 || size > HEAP_SIZE - sizeof(Slist)) {
+        return NULL;
+    }
+
+    
+    size = (size + MIN_BLOCK_SIZE - 1) / MIN_BLOCK_SIZE * MIN_BLOCK_SIZE;
+
+    Slist *cur = freeList;
+    Slist *fit = NULL;
+
+    
+    while (cur) {
+        if (cur->free && cur->size >= size) {
+            if (!fit || cur->size < fit->size) {
+                fit = cur;
+            }
+        }
+        cur = cur->link;
+    }
+
+    if (!fit) {
+        return NULL; 
+    }
+
+
+    if (fit->size >= size + sizeof(Slist) + MIN_BLOCK_SIZE) {
+        Slist *new = (Slist *)((char *)fit + sizeof(Slist) + size);
+        new->size = fit->size - size - sizeof(Slist);
+        new->link = fit->link;
+        new->free = 1;
+
+        fit->size = size;
+        fit->link = new;
+    }
+
+    fit->free = 0; 
+    lastalloc = fit; 
+    return (char *)fit + sizeof(Slist);
+}
+
+
+void best_fit_free(void *ptr) {
+    if (!ptr || lfreed == lastalloc) {
+        return; 
+    }
+
+    Slist *blockToFree = (Slist *)((char *)ptr - sizeof(Slist));
+    if (blockToFree->free) {
+        return; 
+    }
+
+    blockToFree->free = 1;
+    lfreed = blockToFree; 
+
+    
+    Slist *cur = freeList;
+    while (cur) {
+        if (cur->free && cur->link && cur->link->free) {
+            cur->size += sizeof(Slist) + cur->link->size;
+            cur->link = cur->link->link;
+        } else {
+            cur = cur->link;
+        }
+    }
+}
+
+
+int main() {
+    init();
+
+    void *ptr1 = best_fit(sizeof(int) * 128);
+    printf("Allocated first block =  %p\n", ptr1);
+    void *ptr2 = best_fit(sizeof(uint8_t) * 1000);
+    printf("Allocated second block = %p\n", ptr2);
+    void *ptr3 = best_fit(128 * 1024);
+    printf("Allocated third block = %p\n", ptr3); 
+    best_fit_free(ptr1);
+    printf("Freed first block\n");
+    best_fit_free(ptr2);
+    printf("Freed second block\n");
+
+    return 0;
+}
